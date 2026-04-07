@@ -1,22 +1,39 @@
-name: macOS
-
+name: macOS RDP
 on: workflow_dispatch
- 
-defaults:
- run:
-  shell: bash
-  
-  
+
 jobs:
- build:
-  runs-on: macos-latest
-  steps:
-  - uses: actions/checkout@v2
-  - name: Setting the Environment Up.
-    env:
-     NGROK AUTH TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
-    run: source setup.sh "Alone215" "Alone215" "NGROK_AUTH_TOKEN"
-  - name: ngrok is now listening to VINC connections on...
-    run: curl-silent http://127.0.0.1:4040/api/tunnels | jq tunnels[0].public_url
-  - name: Setup teate Session
-    uses: mxschmitt/action-tmate@v2
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Install Homebrew and required packages
+        run: |
+          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          brew install wget jq ngrok
+
+      - name: Configure ngrok
+        run: |
+          ngrok config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
+
+      - name: Enable VNC service
+        run: |
+          sudo systemsetup -setremotelogin on
+          sudo defaults write /Library/Preferences/com.apple.RemoteManagement VNCAlwaysStartOnConsole -bool true
+          sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
+            -activate -configure -access -on -restart -agent -privs -all
+
+      - name: Start ngrok tunnel and show connection
+        run: |
+          ngrok tcp 5900 > ngrok.log &
+          sleep 5
+          echo "======================================"
+          echo " Connect to macOS via VNC using:"
+          curl -s localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url' | sed 's#tcp://##'
+          echo "======================================"
+          # Keep the job alive so ngrok stays running
+          tail -f ngrok.log
+
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v2
